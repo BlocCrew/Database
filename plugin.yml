@@ -1,0 +1,19 @@
+name: Database
+version: 1.0.0
+description: Stores and displays ALL the data.
+author: Bloc Crew
+website: http://bloccrew.com
+main: com.bloccrew.plugin.database.Database
+depend: [Vault]
+
+commands:
+  database:
+    description: Updates the database
+    usage: /database
+    permission: database
+    permission-message: You don't have permission
+    
+permissions:
+  database:
+    description: Updates the database
+    default: op
