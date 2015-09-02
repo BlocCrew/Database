@@ -22,6 +22,7 @@ import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.PluginDescriptionFile;
 import org.bukkit.plugin.RegisteredServiceProvider;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitScheduler;
 
 import net.milkbowl.vault.economy.Economy;
 
@@ -52,7 +53,24 @@ public class Database extends JavaPlugin implements Listener{
 	    }
 	    config = new YamlConfiguration();
 	    loadYamls();
-		
+	    
+	    BukkitScheduler scheduler = Bukkit.getServer().getScheduler();
+        scheduler.scheduleSyncRepeatingTask(this, new Runnable() {
+            @Override
+            public void run() {
+            	Date date = new Date();
+            	DateFormat df = new SimpleDateFormat("EEEE");
+            	String day = df.format(date);
+            	if(day.equals("Saturday")){
+                	df = new SimpleDateFormat("yyyy-MM-dd-HH-mm-ss");
+                	String[] time = df.format(date).split("-");
+                	if(time[3].equals("23") && time[4].equals("59")){
+                		updateDatabase();
+                	}
+            	}
+            }
+        }, 0L, 1200L); //Every minute in ticks
+        
 		getLogger().info("[DATABASE] Database has been enabled");
 	}
 	
@@ -109,8 +127,8 @@ public class Database extends JavaPlugin implements Listener{
 
 	@EventHandler
 	public void onPlayerJoin(PlayerLoginEvent event){
-		DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd-HH-mm-ss");
 		Date date = new Date();
+		DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd-HH-mm-ss");
 		String d = dateFormat.format(date);
 		Player p = event.getPlayer();
 		String name = p.getName();
@@ -119,31 +137,35 @@ public class Database extends JavaPlugin implements Listener{
 		sql.execute("insert into database_players(uuid, player, firstJoined, recentlyJoined) values('"+uuid+"', '"+name+"', '"+d+"', '"+d+"') ON DUPLICATE KEY UPDATE player = '"+name+"', recentlyJoined = '"+d+"'");
 	}
 	
+	private void updateDatabase(){
+		DateFormat dateFormat = new SimpleDateFormat("yyyyMMdd");
+		Date date = new Date();
+		String columnName = "D" + dateFormat.format(date);
+		sql.execute("ALTER TABLE database_econ ADD "+columnName+" double");
+		for(OfflinePlayer p : Bukkit.getServer().getOfflinePlayers()){
+			String name = p.getName();
+			String uuid = p.getUniqueId().toString();
+			double bal = econ.getBalance(p);
+			sql.execute("insert into database_econ(uuid, player, balance) values('"+uuid+"', '"+name+"', '"+bal+"') ON DUPLICATE KEY UPDATE player = '"+name+"', balance = "+bal);
+			sql.execute("UPDATE database_econ SET "+columnName+" = "+bal+" WHERE uuid = '"+uuid+"'");
+		}
+		
+		String serverVersion = Bukkit.getServer().getBukkitVersion();
+		sql.execute("insert into database_plugins(plugin, version) values('SERVER', '"+serverVersion+"') ON DUPLICATE KEY UPDATE version = "+serverVersion);
+		for(Plugin p : Bukkit.getServer().getPluginManager().getPlugins()){
+			String name = p.getName();
+			PluginDescriptionFile pdf = p.getDescription();
+			String version = pdf.getVersion();
+			String website = pdf.getWebsite();
+			sql.execute("insert into database_plugins(plugin, version, website) values('"+name+"', '"+version+"', '"+website+"') ON DUPLICATE KEY UPDATE version = '"+version+"', website = '"+website+"'");
+		}
+		getLogger().info("[DATABASE] Database updated.");
+	}
+	
 	@Override
 	public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
 		if (cmd.getName().equalsIgnoreCase("database") && sender.hasPermission("database")){
-			DateFormat dateFormat = new SimpleDateFormat("yyyyMMdd");
-			Date date = new Date();
-			String columnName = "D" + dateFormat.format(date);
-			sql.execute("ALTER TABLE database_econ ADD "+columnName+" double");
-			for(OfflinePlayer p : Bukkit.getServer().getOfflinePlayers()){
-				String name = p.getName();
-				String uuid = p.getUniqueId().toString();
-				double bal = econ.getBalance(p);
-				sql.execute("insert into database_econ(uuid, player, balance) values('"+uuid+"', '"+name+"', '"+bal+"') ON DUPLICATE KEY UPDATE player = '"+name+"', balance = "+bal);
-				sql.execute("UPDATE database_econ SET "+columnName+" = "+bal+" WHERE uuid = '"+uuid+"'");
-			}
-			
-			String serverVersion = Bukkit.getServer().getBukkitVersion();
-			sql.execute("insert into database_plugins(plugin, version) values('SERVER', '"+serverVersion+"') ON DUPLICATE KEY UPDATE version = "+serverVersion);
-			for(Plugin p : Bukkit.getServer().getPluginManager().getPlugins()){
-				String name = p.getName();
-				PluginDescriptionFile pdf = p.getDescription();
-				String version = pdf.getVersion();
-				String website = pdf.getWebsite();
-				sql.execute("insert into database_plugins(plugin, version, website) values('"+name+"', '"+version+"', '"+website+"') ON DUPLICATE KEY UPDATE version = '"+version+"', website = '"+website+"'");
-			}
-			
+			updateDatabase();
 			sender.sendMessage("Database updated.");
 			return true;
 		}
